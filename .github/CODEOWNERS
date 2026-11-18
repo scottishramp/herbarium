@@ -1,0 +1,4 @@
+# Everything needs the owner's review except site/, which has no owner,
+# so site-only pull requests can be merged by .github/workflows/automerge.yml.
+* @yvlabs
+/site/

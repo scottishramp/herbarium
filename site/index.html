@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4e9">
+  <meta name="description" content="Explore six botanical plates alongside the Bible passages that name each plant.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="herbarium.css">
+  <title>Herbarium · CreativeTech Lab</title>
+  <script type="module" src="herbarium.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="https://creativetech-lab-1013041052669.us-central1.run.app/"><span aria-hidden="true">←</span> CreativeTech Lab</a>
+    <span>Experiment 019</span>
+  </header>
+  <main>
+    <div class="masthead">
+      <h1>Herbarium</h1>
+      <p>A field guide to the plants of Scripture.</p>
+    </div>
+    <noscript><p>Turn on JavaScript to browse the plants and load the Bible passages.</p></noscript>
+    <div class="folio">
+      <nav class="index" aria-label="Plant index">
+        <h2 class="label">Plant index</h2>
+        <ol id="plants"></ol>
+      </nav>
+      <figure class="plate">
+        <div class="mat">
+          <span id="plate-number" class="plate-number"></span>
+          <img id="illustration" alt="" width="471" height="542">
+        </div>
+        <figcaption><span id="plate-creator"></span>, <a id="plate-source" target="_blank" rel="noopener"></a></figcaption>
+      </figure>
+      <article class="reader" aria-labelledby="plant-name">
+        <h2 id="plant-name"></h2>
+        <p id="scientific-name" lang="la"></p>
+        <div class="rule"></div>
+        <nav class="references" aria-label="Bible passages for this plant">
+          <h3 class="label">Passages</h3>
+          <div id="passages"><a></a><a></a></div>
+        </nav>
+        <div class="reading" aria-live="polite" aria-atomic="true">
+          <blockquote id="verse"></blockquote>
+          <p id="status" role="status"></p>
+        </div>
+        <button type="button" id="retry" hidden>Try again</button>
+        <div class="source">
+          <span>World English Bible (US)</span>
+          <a id="chapter" target="_blank" rel="noopener">Read chapter <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="rights">PUBLIC DOMAIN (not copyrighted)<br>
+          This Public Domain Bible text is courtesy of <a href="https://ebible.org/">eBible.org</a>.</p>
+      </article>
+    </div>
+  </main>
+  <footer>
+    <span>Scripture from <a href="https://www.youversion.com/" target="_blank" rel="noopener">YouVersion</a></span>
+    <span>Public-domain botanical plates</span>
+  </footer>
+</body>
+</html>

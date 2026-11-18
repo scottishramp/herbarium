@@ -1,0 +1,109 @@
+name: Auto-merge site changes
+
+# GitHub always runs this from the copy on main, never from the pull request.
+# It never checks out or runs pull request code. It reads the list of changed
+# files through the API and merges only when every file is web content in site/.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  automerge:
+    # Pause by setting the repository variable AUTOMERGE to "off".
+    if: >-
+      github.event.pull_request.base.ref == 'main' &&
+      !github.event.pull_request.draft &&
+      vars.AUTOMERGE != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write       # merge the pull request
+      pull-requests: write  # comment on it
+      actions: write        # start the Pages deploy
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Check changed files, merge, deploy
+        run: |
+          set -euo pipefail
+          max_files=100
+          max_bytes=$((5 * 1024 * 1024))
+          allowed=" html htm css js mjs json txt md xml svg png jpg jpeg gif webp avif ico woff woff2 ttf otf webmanifest mp3 ogg wav mp4 webm pdf "
+          path_re='^site/([A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\.[A-Za-z0-9]+$'
+          owner="${GH_REPO%%/*}"; name="${GH_REPO#*/}"
+          site_url="https://${owner,,}.github.io/${name}/"
+
+          refuse() {
+            {
+              echo "Not auto-merged: $1"
+              echo
+              echo "Auto-merge accepts pull requests that only add, change, rename or delete web files inside \`site/\`"
+              echo "(html, css, js, json, images, fonts, audio/video, pdf; under 5 MB each; at most $max_files files)."
+              echo "Anything else, including \`.github/\`, needs the owner's review."
+            } > comment.md
+            gh pr comment "$PR" --body-file comment.md
+            echo "::error::$1"
+            exit 1
+          }
+
+          pr=$(gh api "repos/$GH_REPO/pulls/$PR")
+          if [ "$(jq -r .state <<<"$pr")" != open ]; then echo "Pull request is not open."; exit 0; fi
+          if [ "$(jq -r .head.sha <<<"$pr")" != "$HEAD_SHA" ]; then echo "A newer commit arrived; its own run decides."; exit 0; fi
+          count=$(jq -r .changed_files <<<"$pr")
+          if [ "$count" -lt 1 ] || [ "$count" -gt "$max_files" ]; then refuse "it changes $count files."; fi
+
+          gh api --paginate "repos/$GH_REPO/pulls/$PR/files?per_page=100" \
+            --jq '.[] | [.status, .filename, (.previous_filename // "")] | @tsv' > files.tsv
+          if [ "$(wc -l < files.tsv)" -ne "$count" ]; then refuse "GitHub returned an incomplete file list."; fi
+
+          tree=$(gh api "repos/$GH_REPO/git/trees/$HEAD_SHA?recursive=1")
+          if [ "$(jq -r .truncated <<<"$tree")" != false ]; then refuse "the file tree is too large to check."; fi
+
+          shown() { printf '%s' "$1" | tr -c 'A-Za-z0-9._/-' '?'; }  # safe to echo in a comment
+          problems=""
+          while IFS=$'\t' read -r status file previous; do
+            for path in "$file" "$previous"; do
+              [ -n "$path" ] || continue
+              ext="${path##*.}"; ext="${ext,,}"
+              if [[ ! "$path" =~ $path_re ]] || [[ "$allowed" != *" $ext "* ]]; then
+                problems+="- \`$(shown "$path")\` is not a web file inside site/"$'\n'
+              fi
+            done
+            if [ "$status" != removed ]; then
+              entry=$(jq -c --arg p "$file" '[.tree[] | select(.path == $p)][0] // {}' <<<"$tree")
+              mode=$(jq -r '.mode // "missing"' <<<"$entry")
+              size=$(jq -r '.size // 0' <<<"$entry")
+              if [ "$mode" != 100644 ] && [ "$mode" != 100755 ]; then
+                problems+="- \`$(shown "$file")\` is not a regular file (mode $mode)"$'\n'
+              elif [ "$size" -gt "$max_bytes" ]; then
+                problems+="- \`$(shown "$file")\` is larger than 5 MB"$'\n'
+              fi
+            fi
+          done < files.tsv
+          if [ -n "$problems" ]; then refuse $'these files are outside what it accepts:\n\n'"$problems"; fi
+
+          # sha= makes GitHub refuse the merge if anything was pushed after the check.
+          title=$(jq -r .title <<<"$pr")
+          merged=false
+          for attempt in 1 2 3 4; do
+            if gh api -X PUT "repos/$GH_REPO/pulls/$PR/merge" \
+                -f sha="$HEAD_SHA" -f merge_method=squash -f commit_title="$title (#$PR)" > merge.json; then
+              merged=true; break
+            fi
+            sleep 10
+          done
+          if [ "$merged" != true ]; then
+            refuse "GitHub would not merge it. It may conflict with main: update the branch and push again."
+          fi
+
+          gh workflow run pages.yml --ref main
+          gh pr comment "$PR" --body "Merged automatically. The live site ($site_url) updates in a minute or two."
